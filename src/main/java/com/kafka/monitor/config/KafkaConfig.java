@@ -1,32 +1,27 @@
 package com.kafka.monitor.config;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.config.EnableWebFlux;
-import org.springframework.context.annotation.Bean;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import java.util.Properties;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Configuration
 @EnableWebFlux
+@RequiredArgsConstructor
 public class KafkaConfig {
-    
+
     @Bean
-    public AdminClient adminClient() {
-        Properties config = new Properties();
-        config.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092"); // Default broker, can be overridden
-        return AdminClient.create(config);
+    @ConfigurationProperties(prefix = "kafka")
+    public KafkaProperties kafkaProperties() {
+        return new KafkaProperties();
     }
 
     @Bean
-    public KafkaConsumer<String, String> kafkaConsumer() {
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
-        props.put("key.deserializer", StringDeserializer.class.getName());
-        props.put("value.deserializer", StringDeserializer.class.getName());
-        props.put("group.id", "kafka-monitor-api-consumer");
-        return new KafkaConsumer<>(props);
+    public KafkaClusterManager kafkaClusterManager(KafkaProperties kafkaProperties) {
+        return new KafkaClusterManager(kafkaProperties);
     }
 }

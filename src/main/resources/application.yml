@@ -4,3 +4,23 @@ server:
 spring:
   application:
     name: kafka-monitor-api
+
+kafka:
+  clusters:
+    - name: local
+      bootstrapServers: localhost:9092
+      properties:
+        security.protocol: PLAINTEXT
+
+    # Example secure cluster configuration (commented out)
+    #- name: secure-cluster
+    #  bootstrapServers: kafka.example.com:9093
+    #  properties:
+    #    security.protocol: SASL_SSL
+    #    sasl.mechanism: SCRAM-SHA-512
+    #    sasl.jaas.config: >
+    #      org.apache.kafka.common.security.scram.ScramLoginModule required
+    #      username="user"
+    #      password="pass";
+    #    ssl.truststore.location: /path/to/truststore.jks
+    #    ssl.truststore.password: truststore-password

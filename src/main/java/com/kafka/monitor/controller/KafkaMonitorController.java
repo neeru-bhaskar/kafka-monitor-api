@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 @RestController
@@ -20,35 +21,34 @@ public class KafkaMonitorController {
     private final KafkaMonitorService kafkaMonitorService;
 
     @GetMapping("/clusters")
-    public Flux<String> listClusters() {
+    public Flux<Map.Entry<String, String>> listClusters() {
         return kafkaMonitorService.listClusters();
     }
 
-    @GetMapping("/topics")
-    public Flux<String> listTopics() {
-        return kafkaMonitorService.listTopics();
+    @GetMapping("/clusters/{clusterName}/topics")
+    public Flux<String> listTopics(@PathVariable String clusterName) {
+        return kafkaMonitorService.listTopics(clusterName);
     }
 
-    @GetMapping("/topics/{topicName}")
-    public Mono<TopicInfo> getTopicInfo(@PathVariable String topicName) {
-        return kafkaMonitorService.getTopicInfo(topicName);
+    @GetMapping("/clusters/{clusterName}/topics/{topicName}")
+    public Mono<TopicInfo> getTopicInfo(
+            @PathVariable String clusterName,
+            @PathVariable String topicName) {
+        return kafkaMonitorService.getTopicInfo(clusterName, topicName);
     }
 
-    @PostMapping("/consumer-groups/{groupId}/offsets")
+    @PostMapping("/clusters/{clusterName}/consumer-groups/{groupId}/offsets")
     public Mono<Void> updateConsumerGroupOffset(
+            @PathVariable String clusterName,
             @PathVariable String groupId,
             @Valid @RequestBody OffsetUpdateRequest request) {
         return kafkaMonitorService.updateConsumerGroupOffset(
-            groupId,
-            request.getTopic(),
-            request.getPartition(),
-            request.getOffset()
-        )
-        .onErrorMap(ExecutionException.class, e -> {
-            if (e.getCause() instanceof UnknownMemberIdException) {
-                return new IllegalStateException("Consumer group " + groupId + " does not exist");
-            }
-            return e;
-        });
+                clusterName,
+                groupId,
+                request.getTopic(),
+                request.getPartition(),
+                request.getOffset())
+            .onErrorMap(e -> e instanceof ExecutionException && e.getCause() instanceof UnknownMemberIdException,
+                       e -> new IllegalStateException("Consumer group '" + groupId + "' does not exist"));
     }
 }

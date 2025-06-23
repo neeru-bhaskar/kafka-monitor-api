@@ -1,5 +1,6 @@
 package com.kafka.monitor.exception;
 
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -10,6 +11,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -50,6 +52,22 @@ public class GlobalExceptionHandler {
         body.put("message", ex.getMessage());
         
         return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND).body(body));
+    }
+
+    @ExceptionHandler(ExecutionException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Mono<ResponseEntity<Map<String, Object>>> handleExecutionException(ExecutionException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("error", "Kafka Operation Failed");
+        
+        if (ex.getCause() instanceof UnknownTopicOrPartitionException) {
+            body.put("message", "Invalid topic or partition");
+        } else {
+            body.put("message", ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage());
+        }
+        
+        return Mono.just(ResponseEntity.badRequest().body(body));
     }
 
     @ExceptionHandler(Exception.class)

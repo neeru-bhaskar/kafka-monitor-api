@@ -1,5 +1,6 @@
 package com.kafka.monitor.service;
 
+import com.kafka.monitor.config.KafkaClusterManager;
 import com.kafka.monitor.model.ConsumerGroupInfo;
 import com.kafka.monitor.model.ConsumerPartitionInfo;
 import com.kafka.monitor.model.PartitionInfo;
@@ -10,8 +11,9 @@ import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.UnknownMemberIdException;
 import org.apache.kafka.common.config.ConfigResource;
+import org.apache.kafka.common.errors.UnknownMemberIdException;
+import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -23,18 +25,15 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class KafkaMonitorService {
-    private final KafkaConsumer<String, String> kafkaConsumer;
-    private final AdminClient adminClient;
+    private final KafkaClusterManager clusterManager;
 
-    public Flux<String> listClusters() {
-        // In a real-world scenario, you would maintain a list of Kafka clusters
-        // For demo purposes, we'll return the default cluster
-        return Flux.just("localhost:9092");
+    public Flux<Map.Entry<String, String>> listClusters() {
+        return Flux.fromIterable(clusterManager.getClusterInfo().entrySet());
     }
 
-    public Flux<String> listTopics() {
+    public Flux<String> listTopics(String clusterName) {
         return Mono.fromCallable(() -> 
-            adminClient.listTopics()
+            clusterManager.getAdminClient(clusterName).listTopics()
                 .listings()
                 .get()
                 .stream()
@@ -43,17 +42,17 @@ public class KafkaMonitorService {
             .flatMapMany(Flux::fromIterable);
     }
 
-    public Mono<TopicInfo> getTopicInfo(String topicName) {
+    public Mono<TopicInfo> getTopicInfo(String clusterName, String topicName) {
         return Mono.fromCallable(() -> {
             // Get topic partitions
-            var partitions = adminClient.describeTopics(Collections.singleton(topicName))
+            var partitions = clusterManager.getAdminClient(clusterName).describeTopics(Collections.singleton(topicName))
                 .allTopicNames()
                 .get()
                 .get(topicName)
                 .partitions();
 
             // Get topic configs
-            var configs = adminClient.describeConfigs(
+            var configs = clusterManager.getAdminClient(clusterName).describeConfigs(
                 Collections.singleton(new ConfigResource(ConfigResource.Type.TOPIC, topicName)))
                 .all()
                 .get()
@@ -74,8 +73,8 @@ public class KafkaMonitorService {
             }
 
             // Get end offsets for all partitions
-            Map<TopicPartition, Long> endOffsets = kafkaConsumer.endOffsets(topicPartitions);
-            Map<TopicPartition, Long> beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
+            Map<TopicPartition, Long> endOffsets = clusterManager.getConsumer(clusterName).endOffsets(topicPartitions);
+            Map<TopicPartition, Long> beginningOffsets = clusterManager.getConsumer(clusterName).beginningOffsets(topicPartitions);
 
             for (var partition : partitions) {
                 TopicPartition tp = new TopicPartition(topicName, partition.partition());
@@ -94,7 +93,7 @@ public class KafkaMonitorService {
             List<PartitionInfo> finalPartitionInfos = partitionInfos;
             Map<String, String> finalConfigs = configs;
 
-            return getConsumerGroupsForTopic(topicName, finalEndOffsets)
+            return getConsumerGroupsForTopic(clusterName, topicName, finalEndOffsets)
                 .collectList()
                 .map(consumerGroups -> TopicInfo.builder()
                     .name(topicName)
@@ -102,29 +101,29 @@ public class KafkaMonitorService {
                     .consumerGroups(consumerGroups)
                     .configs(finalConfigs)
                     .build());
-        }).flatMap(mono -> mono);
+        }).flatMap(mono -> (Mono<TopicInfo>) mono);
     }
 
-    private Flux<ConsumerGroupInfo> getConsumerGroupsForTopic(String topicName, Map<TopicPartition, Long> endOffsets) {
+    private Flux<ConsumerGroupInfo> getConsumerGroupsForTopic(String clusterName, String topicName, Map<TopicPartition, Long> endOffsets) {
         return Mono.fromCallable(() -> 
-            adminClient.listConsumerGroups()
+            clusterManager.getAdminClient(clusterName).listConsumerGroups()
                 .all()
                 .get()
                 .stream()
                 .map(ConsumerGroupListing::groupId)
                 .collect(Collectors.toList()))
             .flatMapMany(groups -> Flux.fromIterable(groups)
-                .flatMap(groupId -> getConsumerGroupInfo(groupId, topicName, endOffsets)));
+                .flatMap(groupId -> getConsumerGroupInfo(clusterName, groupId, topicName, endOffsets)));
     }
 
-    private Mono<ConsumerGroupInfo> getConsumerGroupInfo(String groupId, String topicName, Map<TopicPartition, Long> endOffsets) {
+    private Mono<ConsumerGroupInfo> getConsumerGroupInfo(String clusterName, String groupId, String topicName, Map<TopicPartition, Long> endOffsets) {
         return Mono.fromCallable(() -> {
-            var description = adminClient.describeConsumerGroups(Collections.singleton(groupId))
+            var description = clusterManager.getAdminClient(clusterName).describeConsumerGroups(Collections.singleton(groupId))
                 .all()
                 .get()
                 .get(groupId);
 
-            var offsets = adminClient.listConsumerGroupOffsets(groupId)
+            var offsets = clusterManager.getAdminClient(clusterName).listConsumerGroupOffsets(groupId)
                 .partitionsToOffsetAndMetadata()
                 .get();
 
@@ -161,29 +160,37 @@ public class KafkaMonitorService {
         });
     }
 
-    @PreDestroy
-    public void cleanup() {
-        kafkaConsumer.close();
-    }
 
-    public Mono<Void> updateConsumerGroupOffset(String groupId, String topic, int partition, long offset) {
+
+    public Mono<Void> updateConsumerGroupOffset(String clusterName, String groupId, String topic, int partition, long offset) {
         return Mono.fromCallable(() -> {
-            TopicPartition topicPartition = new TopicPartition(topic, partition);
-            Map<TopicPartition, OffsetAndMetadata> offsetMap = Collections.singletonMap(
-                topicPartition,
-                new OffsetAndMetadata(offset)
-            );
-
             try {
-                // Verify the topic partition exists
-                Map<TopicPartition, Long> endOffsets = kafkaConsumer.endOffsets(Collections.singletonList(topicPartition));
-                if (!endOffsets.containsKey(topicPartition)) {
-                    throw new IllegalArgumentException("Topic partition does not exist");
+                // Verify topic exists and get partition count
+                TopicDescription topicDesc;
+                try {
+                    topicDesc = clusterManager.getAdminClient(clusterName).describeTopics(Collections.singleton(topic))
+                        .topicNameValues()
+                        .get(topic)
+                        .get();
+                } catch (ExecutionException e) {
+                    if (e.getCause() instanceof UnknownTopicOrPartitionException) {
+                        throw new IllegalArgumentException("Topic '" + topic + "' does not exist");
+                    }
+                    throw e;
                 }
 
+                if (partition < 0 || partition >= topicDesc.partitions().size()) {
+                    throw new IllegalArgumentException(String.format(
+                        "Invalid partition number %d. Topic '%s' has %d partitions (0-%d)",
+                        partition, topic, topicDesc.partitions().size(), topicDesc.partitions().size() - 1));
+                }
+
+                TopicPartition topicPartition = new TopicPartition(topic, partition);
+
                 // Verify offset is within bounds
+                Map<TopicPartition, Long> endOffsets = clusterManager.getConsumer(clusterName).endOffsets(Collections.singletonList(topicPartition));
+                Map<TopicPartition, Long> beginningOffsets = clusterManager.getConsumer(clusterName).beginningOffsets(Collections.singletonList(topicPartition));
                 long endOffset = endOffsets.get(topicPartition);
-                Map<TopicPartition, Long> beginningOffsets = kafkaConsumer.beginningOffsets(Collections.singletonList(topicPartition));
                 long beginningOffset = beginningOffsets.get(topicPartition);
 
                 if (offset < beginningOffset || offset > endOffset) {
@@ -193,12 +200,20 @@ public class KafkaMonitorService {
                 }
 
                 // Update the offset
-                adminClient.alterConsumerGroupOffsets(groupId, offsetMap).all().get();
-                return null;
-            } catch (ExecutionException e) {
-                if (e.getCause() instanceof UnknownMemberIdException) {
-                    throw new IllegalStateException("Consumer group " + groupId + " does not exist");
+                Map<TopicPartition, OffsetAndMetadata> offsetMap = Collections.singletonMap(
+                    topicPartition,
+                    new OffsetAndMetadata(offset)
+                );
+                try {
+                    clusterManager.getAdminClient(clusterName).alterConsumerGroupOffsets(groupId, offsetMap).all().get();
+                    return null;
+                } catch (ExecutionException e) {
+                    if (e.getCause() instanceof UnknownMemberIdException) {
+                        throw new IllegalStateException("Consumer group '" + groupId + "' does not exist");
+                    }
+                    throw e;
                 }
+            } catch (ExecutionException e) {
                 throw new RuntimeException("Failed to update consumer group offset", e);
             }
         });
