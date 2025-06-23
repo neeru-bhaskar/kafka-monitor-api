@@ -23,9 +23,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class KafkaMonitorService {
     private final KafkaClusterManager clusterManager;
+
+    public KafkaMonitorService(KafkaClusterManager clusterManager) {
+        this.clusterManager = clusterManager;
+    }
 
     public Flux<Map.Entry<String, String>> listClusters() {
         return Flux.fromIterable(clusterManager.getClusterInfo().entrySet());
@@ -163,59 +166,110 @@ public class KafkaMonitorService {
 
 
     public Mono<Void> updateConsumerGroupOffset(String clusterName, String groupId, String topic, int partition, long offset) {
-        return Mono.fromCallable(() -> {
+        AdminClient adminClient = clusterManager.getAdminClient(clusterName);
+        
+        // First validate topic and partition
+        return Mono.create(sink -> {
             try {
-                // Verify topic exists and get partition count
-                TopicDescription topicDesc;
-                try {
-                    topicDesc = clusterManager.getAdminClient(clusterName).describeTopics(Collections.singleton(topic))
-                        .topicNameValues()
-                        .get(topic)
-                        .get();
-                } catch (ExecutionException e) {
-                    if (e.getCause() instanceof UnknownTopicOrPartitionException) {
-                        throw new IllegalArgumentException("Topic '" + topic + "' does not exist");
-                    }
-                    throw e;
-                }
+                adminClient.describeTopics(Collections.singleton(topic))
+                    .allTopicNames()
+                    .get()
+                    .values()
+                    .stream()
+                    .findFirst()
+                    .ifPresentOrElse(
+                        topicDesc -> {
+                            if (partition < 0 || partition >= topicDesc.partitions().size()) {
+                                sink.error(new IllegalArgumentException(String.format(
+                                    "Invalid partition number %d. Topic '%s' has %d partitions (0-%d)",
+                                    partition, topic, topicDesc.partitions().size(),
+                                    topicDesc.partitions().size() - 1)));
+                                return;
+                            }
 
-                if (partition < 0 || partition >= topicDesc.partitions().size()) {
-                    throw new IllegalArgumentException(String.format(
-                        "Invalid partition number %d. Topic '%s' has %d partitions (0-%d)",
-                        partition, topic, topicDesc.partitions().size(), topicDesc.partitions().size() - 1));
-                }
+                            TopicPartition topicPartition = new TopicPartition(topic, partition);
 
-                TopicPartition topicPartition = new TopicPartition(topic, partition);
+                            // Check if consumer group exists
+                            adminClient.describeConsumerGroups(Collections.singleton(groupId))
+                                .all()
+                                .whenComplete((groupDesc, error) -> {
+                                    if (error != null) {
+                                        sink.error(error);
+                                        return;
+                                    }
+                                    if (groupDesc.isEmpty()) {
+                                        sink.error(new IllegalStateException("Consumer group '" + groupId + "' does not exist"));
+                                        return;
+                                    }
 
-                // Verify offset is within bounds
-                Map<TopicPartition, Long> endOffsets = clusterManager.getConsumer(clusterName).endOffsets(Collections.singletonList(topicPartition));
-                Map<TopicPartition, Long> beginningOffsets = clusterManager.getConsumer(clusterName).beginningOffsets(Collections.singletonList(topicPartition));
-                long endOffset = endOffsets.get(topicPartition);
-                long beginningOffset = beginningOffsets.get(topicPartition);
+                                    // Validate offset bounds
+                                    var earliestOffsetsFuture = adminClient.listOffsets(
+                                        Collections.singletonMap(topicPartition, OffsetSpec.earliest())
+                                    ).all();
+                                    var latestOffsetsFuture = adminClient.listOffsets(
+                                        Collections.singletonMap(topicPartition, OffsetSpec.latest())
+                                    ).all();
 
-                if (offset < beginningOffset || offset > endOffset) {
-                    throw new IllegalArgumentException(
-                        String.format("Offset %d is out of range. Valid range is %d to %d",
-                            offset, beginningOffset, endOffset));
-                }
+                                    earliestOffsetsFuture.whenComplete((beginningOffsets, e1) -> {
+                                        if (e1 != null) {
+                                            sink.error(e1);
+                                            return;
+                                        }
+                                        latestOffsetsFuture.whenComplete((endOffsets, e2) -> {
+                                            if (e2 != null) {
+                                                sink.error(e2);
+                                                return;
+                                            }
 
-                // Update the offset
-                Map<TopicPartition, OffsetAndMetadata> offsetMap = Collections.singletonMap(
-                    topicPartition,
-                    new OffsetAndMetadata(offset)
-                );
-                try {
-                    clusterManager.getAdminClient(clusterName).alterConsumerGroupOffsets(groupId, offsetMap).all().get();
-                    return null;
-                } catch (ExecutionException e) {
-                    if (e.getCause() instanceof UnknownMemberIdException) {
-                        throw new IllegalStateException("Consumer group '" + groupId + "' does not exist");
-                    }
-                    throw e;
-                }
+                                            Long beginningOffset = beginningOffsets.get(topicPartition).offset();
+                                            Long endOffset = endOffsets.get(topicPartition).offset();
+
+                                            if (beginningOffset == null || endOffset == null) {
+                                                sink.error(new IllegalStateException("Failed to get offset bounds"));
+                                                return;
+                                            }
+
+                                            if (offset < beginningOffset || offset > endOffset) {
+                                                sink.error(new IllegalArgumentException(
+                                                    String.format("Offset %d is out of range. Valid range is %d to %d",
+                                                        offset, beginningOffset, endOffset)));
+                                                return;
+                                            }
+
+                                            // Update offset
+                                            Map<TopicPartition, OffsetAndMetadata> offsetMap = Collections.singletonMap(
+                                                topicPartition,
+                                                new OffsetAndMetadata(offset)
+                                            );
+
+                                            adminClient.alterConsumerGroupOffsets(groupId, offsetMap)
+                                                .all()
+                                                .whenComplete((result, e3) -> {
+                                                    if (e3 != null) {
+                                                        sink.error(e3);
+                                                    } else {
+                                                        sink.success();
+                                                    }
+                                                });
+                                        });
+                                    });
+                                });
+                        },
+                        () -> sink.error(new IllegalArgumentException("Topic '" + topic + "' does not exist"))
+                    );
             } catch (ExecutionException e) {
-                throw new RuntimeException("Failed to update consumer group offset", e);
+                if (e.getCause() instanceof UnknownTopicOrPartitionException) {
+                    sink.error(new IllegalArgumentException("Topic '" + topic + "' does not exist"));
+                } else if (e.getCause() instanceof UnknownMemberIdException) {
+                    sink.error(new IllegalStateException("Consumer group '" + groupId + "' does not exist"));
+                } else {
+                    sink.error(new RuntimeException("Failed to update consumer group offset", e));
+                }
+            } catch (InterruptedException e) {
+                sink.error(new RuntimeException("Operation interrupted", e));
+                Thread.currentThread().interrupt();
             }
         });
+
     }
 }
