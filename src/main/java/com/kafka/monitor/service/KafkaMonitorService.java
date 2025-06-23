@@ -1,10 +1,16 @@
 package com.kafka.monitor.service;
 
-import com.kafka.monitor.model.*;
+import com.kafka.monitor.model.ConsumerGroupInfo;
+import com.kafka.monitor.model.ConsumerPartitionInfo;
+import com.kafka.monitor.model.PartitionInfo;
+import com.kafka.monitor.model.TopicInfo;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.UnknownMemberIdException;
 import org.apache.kafka.common.config.ConfigResource;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -17,6 +23,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class KafkaMonitorService {
+    private final KafkaConsumer<String, String> kafkaConsumer;
     private final AdminClient adminClient;
 
     public Flux<String> listClusters() {
@@ -57,30 +64,48 @@ public class KafkaMonitorService {
                 .stream()
                 .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value));
 
-            // Build partition info
+            // Build partition info with latest offsets
             List<PartitionInfo> partitionInfos = new ArrayList<>();
+            List<TopicPartition> topicPartitions = new ArrayList<>();
+            
             for (var partition : partitions) {
+                TopicPartition tp = new TopicPartition(topicName, partition.partition());
+                topicPartitions.add(tp);
+            }
+
+            // Get end offsets for all partitions
+            Map<TopicPartition, Long> endOffsets = kafkaConsumer.endOffsets(topicPartitions);
+            Map<TopicPartition, Long> beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
+
+            for (var partition : partitions) {
+                TopicPartition tp = new TopicPartition(topicName, partition.partition());
                 partitionInfos.add(PartitionInfo.builder()
                     .partition(partition.partition())
                     .leader(partition.leader().id())
                     .replicas(partition.replicas().stream().mapToInt(r -> r.id()).toArray())
                     .inSyncReplicas(partition.isr().stream().mapToInt(r -> r.id()).toArray())
+                    .beginningOffset(beginningOffsets.get(tp))
+                    .endOffset(endOffsets.get(tp))
                     .build());
             }
 
-            // Get consumer groups
-            var consumerGroups = getConsumerGroupsForTopic(topicName).collectList().block();
+            // Prepare data for consumer groups
+            Map<TopicPartition, Long> finalEndOffsets = endOffsets;
+            List<PartitionInfo> finalPartitionInfos = partitionInfos;
+            Map<String, String> finalConfigs = configs;
 
-            return TopicInfo.builder()
-                .name(topicName)
-                .partitions(partitionInfos)
-                .consumerGroups(consumerGroups)
-                .configs(configs)
-                .build();
-        });
+            return getConsumerGroupsForTopic(topicName, finalEndOffsets)
+                .collectList()
+                .map(consumerGroups -> TopicInfo.builder()
+                    .name(topicName)
+                    .partitions(finalPartitionInfos)
+                    .consumerGroups(consumerGroups)
+                    .configs(finalConfigs)
+                    .build());
+        }).flatMap(mono -> mono);
     }
 
-    private Flux<ConsumerGroupInfo> getConsumerGroupsForTopic(String topicName) {
+    private Flux<ConsumerGroupInfo> getConsumerGroupsForTopic(String topicName, Map<TopicPartition, Long> endOffsets) {
         return Mono.fromCallable(() -> 
             adminClient.listConsumerGroups()
                 .all()
@@ -89,10 +114,10 @@ public class KafkaMonitorService {
                 .map(ConsumerGroupListing::groupId)
                 .collect(Collectors.toList()))
             .flatMapMany(groups -> Flux.fromIterable(groups)
-                .flatMap(groupId -> getConsumerGroupInfo(groupId, topicName)));
+                .flatMap(groupId -> getConsumerGroupInfo(groupId, topicName, endOffsets)));
     }
 
-    private Mono<ConsumerGroupInfo> getConsumerGroupInfo(String groupId, String topicName) {
+    private Mono<ConsumerGroupInfo> getConsumerGroupInfo(String groupId, String topicName, Map<TopicPartition, Long> endOffsets) {
         return Mono.fromCallable(() -> {
             var description = adminClient.describeConsumerGroups(Collections.singleton(groupId))
                 .all()
@@ -112,9 +137,15 @@ public class KafkaMonitorService {
                         .findFirst()
                         .orElse(null);
 
+                    long currentOffset = offsetMetadata.offset();
+                    long endOffset = endOffsets.getOrDefault(topicPartition, 0L);
+                    long lag = Math.max(0, endOffset - currentOffset);
+
                     partitionOffsets.put(topicPartition.partition(),
                         ConsumerPartitionInfo.builder()
-                            .currentOffset(offsetMetadata.offset())
+                            .currentOffset(currentOffset)
+                            .endOffset(endOffset)
+                            .lag(lag)
                             .consumerId(member != null ? member.consumerId() : null)
                             .clientId(member != null ? member.clientId() : null)
                             .host(member != null ? member.host() : null)
@@ -127,6 +158,49 @@ public class KafkaMonitorService {
                 .state(description.state().toString())
                 .partitionOffsets(partitionOffsets)
                 .build();
+        });
+    }
+
+    @PreDestroy
+    public void cleanup() {
+        kafkaConsumer.close();
+    }
+
+    public Mono<Void> updateConsumerGroupOffset(String groupId, String topic, int partition, long offset) {
+        return Mono.fromCallable(() -> {
+            TopicPartition topicPartition = new TopicPartition(topic, partition);
+            Map<TopicPartition, OffsetAndMetadata> offsetMap = Collections.singletonMap(
+                topicPartition,
+                new OffsetAndMetadata(offset)
+            );
+
+            try {
+                // Verify the topic partition exists
+                Map<TopicPartition, Long> endOffsets = kafkaConsumer.endOffsets(Collections.singletonList(topicPartition));
+                if (!endOffsets.containsKey(topicPartition)) {
+                    throw new IllegalArgumentException("Topic partition does not exist");
+                }
+
+                // Verify offset is within bounds
+                long endOffset = endOffsets.get(topicPartition);
+                Map<TopicPartition, Long> beginningOffsets = kafkaConsumer.beginningOffsets(Collections.singletonList(topicPartition));
+                long beginningOffset = beginningOffsets.get(topicPartition);
+
+                if (offset < beginningOffset || offset > endOffset) {
+                    throw new IllegalArgumentException(
+                        String.format("Offset %d is out of range. Valid range is %d to %d",
+                            offset, beginningOffset, endOffset));
+                }
+
+                // Update the offset
+                adminClient.alterConsumerGroupOffsets(groupId, offsetMap).all().get();
+                return null;
+            } catch (ExecutionException e) {
+                if (e.getCause() instanceof UnknownMemberIdException) {
+                    throw new IllegalStateException("Consumer group " + groupId + " does not exist");
+                }
+                throw new RuntimeException("Failed to update consumer group offset", e);
+            }
         });
     }
 }

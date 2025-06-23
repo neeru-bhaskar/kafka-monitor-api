@@ -12,4 +12,9 @@ public class PartitionInfo {
     private int leader;
     private int[] replicas;
     private int[] inSyncReplicas;
+    private long messageCount;
+
+    public long getMessageCount() {
+        return endOffset - beginningOffset;
+    }
 }
