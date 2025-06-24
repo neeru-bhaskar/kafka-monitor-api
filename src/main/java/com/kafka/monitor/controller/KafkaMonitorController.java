@@ -13,6 +13,17 @@ import reactor.core.publisher.Mono;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.ResponseStatus;
+
 /**
  * REST controller for Kafka monitoring operations.
  * Provides endpoints for managing multiple Kafka clusters, topics, and consumer groups.
@@ -24,6 +35,12 @@ import java.util.concurrent.ExecutionException;
 @CrossOrigin
 public class KafkaMonitorController {
     private final KafkaMonitorService kafkaMonitorService;
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Mono<Map<String, String>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return Mono.just(Map.of("error", ex.getMessage()));
+    }
 
     /**
      * List all configured Kafka clusters.

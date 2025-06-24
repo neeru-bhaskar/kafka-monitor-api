@@ -172,7 +172,7 @@ class KafkaMonitorControllerTest {
                 .bodyValue(request)
                 .exchange()
                 .expectStatus().isBadRequest()
-                .expectBody(String.class)
-                .isEqualTo("Offset -1 is out of range");
+                .expectBody(Map.class)
+                .value(response -> assertThat(response.get("error")).isEqualTo("Offset -1 is out of range"));
     }
 }
