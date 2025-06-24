@@ -79,15 +79,19 @@ class KafkaMonitorServiceTest {
     @Test
     void listTopics_ShouldReturnTopicsList() {
         // Given
+        String clusterName = "local";
+        List<TopicListing> topics = Arrays.asList(
+            new TopicListing("orders", false),
+            new TopicListing("notifications", false)
+        );
+        
+        // Mock admin client for this test only
+        AdminClient adminClient = mock(AdminClient.class);
+        when(clusterManager.getAdminClient(clusterName)).thenReturn(adminClient);
+        
         ListTopicsResult listTopicsResult = mock(ListTopicsResult.class);
-        KafkaFuture<Collection<TopicListing>> listingsFuture = KafkaFuture.completedFuture(
-            Arrays.asList(
-                new TopicListing("orders", false),
-                new TopicListing("notifications", false)
-            ));
-        when(listTopicsResult.listings()).thenReturn(listingsFuture);
+        when(listTopicsResult.listings()).thenReturn(KafkaFuture.completedFuture(topics));
         when(adminClient.listTopics()).thenReturn(listTopicsResult);
-        when(clusterManager.getAdminClient("local")).thenReturn(adminClient);
 
         // When
         Flux<String> result = service.listTopics("local");
@@ -106,7 +110,15 @@ class KafkaMonitorServiceTest {
     @Test
     void getTopicInfo_ShouldReturnTopicDetails() {
         // Given
-        String topicName = "test-topic";
+        String clusterName = "local";
+        String topicName = "orders";
+        
+        // Mock admin client and consumer for this test only
+        AdminClient adminClient = mock(AdminClient.class);
+        KafkaConsumer<String, String> kafkaConsumer = mock(KafkaConsumer.class);
+        when(clusterManager.getAdminClient(clusterName)).thenReturn(adminClient);
+        when(clusterManager.getConsumer(clusterName)).thenReturn(kafkaConsumer);
+
         Node leader = new Node(1, "localhost", 9092);
         TopicPartitionInfo partitionInfo = new TopicPartitionInfo(
                 0, leader, List.of(leader), List.of(leader));
@@ -138,7 +150,6 @@ class KafkaMonitorServiceTest {
         when(adminClient.describeConfigs(any())).thenReturn(configsResult);
         when(adminClient.listOffsets(Map.of(topicPartition, OffsetSpec.earliest()))).thenReturn(earliestResult);
         when(adminClient.listOffsets(Map.of(topicPartition, OffsetSpec.latest()))).thenReturn(latestResult);
-        when(clusterManager.getAdminClient("local")).thenReturn(adminClient);
 
         // When
         Mono<TopicInfo> result = service.getTopicInfo("local", topicName);
@@ -161,13 +172,15 @@ class KafkaMonitorServiceTest {
     @Test
     void updateConsumerGroupOffset_ShouldUpdateOffset() {
         // Given
-        String groupId = "test-group";
-        String topic = "test-topic";
+        String clusterName = "local";
+        String groupId = "order-processor";
+        String topic = "orders";
         int partition = 0;
         long offset = 100L;
-
-        // Mock cluster manager
-        when(clusterManager.getAdminClient("local")).thenReturn(adminClient);
+        
+        // Mock admin client for this test only
+        AdminClient adminClient = mock(AdminClient.class);
+        when(clusterManager.getAdminClient(clusterName)).thenReturn(adminClient);
 
         // Mock describe consumer groups
         DescribeConsumerGroupsResult describeResult = mock(DescribeConsumerGroupsResult.class);
@@ -210,13 +223,15 @@ class KafkaMonitorServiceTest {
     @Test
     void updateConsumerGroupOffset_WithInvalidOffset_ShouldReturnError() {
         // Given
-        String groupId = "test-group";
-        String topic = "test-topic";
+        String clusterName = "local";
+        String groupId = "order-processor";
+        String topic = "orders";
         int partition = 0;
         long offset = -1L;
-
-        // Mock cluster manager
-        when(clusterManager.getAdminClient("local")).thenReturn(adminClient);
+        
+        // Mock admin client for this test only
+        AdminClient adminClient = mock(AdminClient.class);
+        when(clusterManager.getAdminClient(clusterName)).thenReturn(adminClient);
 
         // Mock describe consumer groups
         DescribeConsumerGroupsResult describeResult = mock(DescribeConsumerGroupsResult.class);
