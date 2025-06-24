@@ -1,7 +1,7 @@
 package com.kafka.monitor.controller;
 
-import com.kafka.monitor.model.TopicInfo;
-import com.kafka.monitor.model.OffsetUpdateRequest;
+import com.kafka.monitor.model.*;
+import org.springframework.http.MediaType;
 import com.kafka.monitor.service.KafkaMonitorService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,24 +20,29 @@ import java.util.concurrent.ExecutionException;
 public class KafkaMonitorController {
     private final KafkaMonitorService kafkaMonitorService;
 
-    @GetMapping("/clusters")
-    public Flux<Map.Entry<String, String>> listClusters() {
-        return kafkaMonitorService.listClusters();
+    @GetMapping(value = "/clusters", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Flux<ClusterInfo> listClusters() {
+        return kafkaMonitorService.listClusters()
+            .map(entry -> new ClusterInfo(entry.getKey(), entry.getValue()));
     }
 
-    @GetMapping("/clusters/{clusterName}/topics")
-    public Flux<String> listTopics(@PathVariable String clusterName) {
-        return kafkaMonitorService.listTopics(clusterName);
+    @GetMapping(value = "/clusters/{clusterName}/topics", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<TopicsList> listTopics(@PathVariable String clusterName) {
+        return kafkaMonitorService.listTopics(clusterName)
+                .collectList()
+                .map(TopicsList::new);
+//            .map(topic -> new TopicListResponse(topic));
+
     }
 
-    @GetMapping("/clusters/{clusterName}/topics/{topicName}")
+    @GetMapping(value = "/clusters/{clusterName}/topics/{topicName}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<TopicInfo> getTopicInfo(
             @PathVariable String clusterName,
             @PathVariable String topicName) {
         return kafkaMonitorService.getTopicInfo(clusterName, topicName);
     }
 
-    @PostMapping("/clusters/{clusterName}/consumer-groups/{groupId}/offsets")
+    @PostMapping(value = "/clusters/{clusterName}/consumer-groups/{groupId}/offsets", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Void> updateConsumerGroupOffset(
             @PathVariable String clusterName,
             @PathVariable String groupId,
