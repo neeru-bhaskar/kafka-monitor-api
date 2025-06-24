@@ -33,12 +33,20 @@ class KafkaMonitorControllerTest {
     private WebTestClient webTestClient;
     private KafkaMonitorController controller;
 
+    /**
+     * Set up test environment before each test.
+     * Initializes WebTestClient and controller with mocked service.
+     */
     @BeforeEach
     void setUp() {
         controller = new KafkaMonitorController(kafkaMonitorService);
         webTestClient = WebTestClient.bindToController(controller).build();
     }
 
+    /**
+     * Test that GET /clusters endpoint returns a list of Kafka clusters.
+     * Verifies response status and content type.
+     */
     @Test
     void listClusters_ShouldReturnClusterList() {
         // Given
@@ -56,6 +64,10 @@ class KafkaMonitorControllerTest {
                 .jsonPath("$[0].bootstrapServers").isEqualTo("localhost:9092");
     }
 
+    /**
+     * Test that GET /clusters/{clusterName}/topics endpoint returns a list of topics.
+     * Verifies response status and content type.
+     */
     @Test
     void listTopics_ShouldReturnTopicsList() {
         // Given
@@ -74,6 +86,10 @@ class KafkaMonitorControllerTest {
                 .jsonPath("$.topics[1]").isEqualTo("notifications");
     }
 
+    /**
+     * Test that GET /clusters/{clusterName}/topics/{topicName} endpoint returns topic details.
+     * Verifies response status, content type, and topic information.
+     */
     @Test
     void getTopicInfo_ShouldReturnTopicDetails() {
         // Given
@@ -96,6 +112,10 @@ class KafkaMonitorControllerTest {
                 .jsonPath("$.name").isEqualTo("orders");
     }
 
+    /**
+     * Test that POST /clusters/{clusterName}/consumer-groups/{groupId}/offsets endpoint updates offsets.
+     * Verifies successful offset update with 200 OK response.
+     */
     @Test
     void updateConsumerGroupOffset_ShouldUpdateOffset() {
         // Given
@@ -122,6 +142,11 @@ class KafkaMonitorControllerTest {
                 .expectStatus().isOk();
     }
 
+    /**
+     * Test that POST /clusters/{clusterName}/consumer-groups/{groupId}/offsets endpoint
+     * returns 400 Bad Request for invalid offset value.
+     * Verifies error response and message content.
+     */
     @Test
     void updateConsumerGroupOffset_WithInvalidOffset_ShouldReturnBadRequest() {
         // Given
@@ -138,7 +163,7 @@ class KafkaMonitorControllerTest {
                 eq(request.getTopic()),
                 eq(request.getPartition()),
                 eq(request.getOffset())))
-                .thenReturn(Mono.error(new IllegalArgumentException("Invalid offset")));
+                .thenReturn(Mono.error(new IllegalArgumentException("Offset -1 is out of range")));
 
         // When & Then
         webTestClient.post()
@@ -148,6 +173,6 @@ class KafkaMonitorControllerTest {
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody(String.class)
-                .value(response -> assertThat(response).contains("Invalid offset"));
+                .value(response -> assertThat(response).contains("Offset -1 is out of range"));
     }
 }

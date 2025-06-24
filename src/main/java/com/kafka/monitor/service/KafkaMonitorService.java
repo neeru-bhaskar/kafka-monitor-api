@@ -23,6 +23,11 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 @Service
+/**
+ * Service layer for Kafka monitoring operations.
+ * Provides functionality to interact with multiple Kafka clusters through AdminClient.
+ * Supports cluster management, topic operations, and consumer group offset management.
+ */
 public class KafkaMonitorService {
     private final KafkaClusterManager clusterManager;
 
@@ -30,10 +35,21 @@ public class KafkaMonitorService {
         this.clusterManager = clusterManager;
     }
 
+    /**
+     * List all configured Kafka clusters.
+     * 
+     * @return Flux of cluster name and bootstrap server pairs
+     */
     public Flux<Map.Entry<String, String>> listClusters() {
         return Flux.fromIterable(clusterManager.getClusterInfo().entrySet());
     }
 
+    /**
+     * List all topics in a specified Kafka cluster.
+     * 
+     * @param clusterName name of the Kafka cluster
+     * @return Flux of topic names
+     */
     public Flux<String> listTopics(String clusterName) {
         return Mono.fromCallable(() -> 
             clusterManager.getAdminClient(clusterName).listTopics()
@@ -45,6 +61,13 @@ public class KafkaMonitorService {
             .flatMapMany(Flux::fromIterable);
     }
 
+    /**
+     * Get detailed information about a specific topic.
+     * 
+     * @param clusterName name of the Kafka cluster
+     * @param topicName name of the topic
+     * @return Mono containing topic details including partitions, configuration, and offsets
+     */
     public Mono<TopicInfo> getTopicInfo(String clusterName, String topicName) {
         return Mono.fromCallable(() -> {
             // Get topic partitions
@@ -165,6 +188,17 @@ public class KafkaMonitorService {
 
 
 
+    /**
+     * Update consumer group offset for a specific topic partition.
+     * 
+     * @param clusterName name of the Kafka cluster
+     * @param groupId consumer group ID
+     * @param topic topic name
+     * @param partition partition number
+     * @param offset new offset value
+     * @return Mono<Void> completing when offset is updated
+     * @throws IllegalArgumentException if offset is out of range or partition is invalid
+     */
     public Mono<Void> updateConsumerGroupOffset(String clusterName, String groupId, String topic, int partition, long offset) {
         AdminClient adminClient = clusterManager.getAdminClient(clusterName);
         

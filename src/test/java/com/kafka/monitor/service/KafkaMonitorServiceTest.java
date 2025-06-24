@@ -44,11 +44,19 @@ class KafkaMonitorServiceTest {
 
     private KafkaMonitorService service;
 
+    /**
+     * Set up test environment before each test.
+     * Initializes service with mocked cluster manager.
+     */
     @BeforeEach
     void setUp() {
         service = new KafkaMonitorService(clusterManager);
     }
 
+    /**
+     * Test that listClusters() returns a Flux of cluster name and bootstrap server pairs.
+     * Verifies that cluster information is correctly retrieved from cluster manager.
+     */
     @Test
     void listClusters_ShouldReturnClusterList() {
         // Given
@@ -64,6 +72,10 @@ class KafkaMonitorServiceTest {
             .verifyComplete();
     }
 
+    /**
+     * Test that listTopics() returns a Flux of topic names for a given cluster.
+     * Verifies that topic listings are correctly retrieved through AdminClient.
+     */
     @Test
     void listTopics_ShouldReturnTopicsList() {
         // Given
@@ -87,6 +99,10 @@ class KafkaMonitorServiceTest {
             .verifyComplete();
     }
 
+    /**
+     * Test that getTopicInfo() returns detailed topic information including partitions and offsets.
+     * Verifies that topic description, configuration, and offset information are correctly retrieved.
+     */
     @Test
     void getTopicInfo_ShouldReturnTopicDetails() {
         // Given
@@ -106,15 +122,22 @@ class KafkaMonitorServiceTest {
         DescribeConfigsResult configsResult = mock(DescribeConfigsResult.class);
         when(configsResult.all()).thenReturn(KafkaFuture.completedFuture(configMap));
 
-        Map<TopicPartition, ListOffsetsResultInfo> offsetResults = Map.of(
-            new TopicPartition(topicName, 0), 
-            new ListOffsetsResultInfo(0L, 0L, Optional.empty()));
-        ListOffsetsResult listOffsetsResult = mock(ListOffsetsResult.class);
-        when(listOffsetsResult.all()).thenReturn(KafkaFuture.completedFuture(offsetResults));
+        // Mock earliest offsets
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+        ListOffsetsResult earliestResult = mock(ListOffsetsResult.class);
+        ListOffsetsResult latestResult = mock(ListOffsetsResult.class);
+        ListOffsetsResultInfo earliestInfo = new ListOffsetsResultInfo(0L, 0L, Optional.empty());
+        ListOffsetsResultInfo latestInfo = new ListOffsetsResultInfo(100L, 0L, Optional.empty());
+
+        when(earliestResult.all()).thenReturn(KafkaFuture.completedFuture(
+            Map.of(topicPartition, earliestInfo)));
+        when(latestResult.all()).thenReturn(KafkaFuture.completedFuture(
+            Map.of(topicPartition, latestInfo)));
 
         when(adminClient.describeTopics(Set.of(topicName))).thenReturn(describeTopicsResult);
         when(adminClient.describeConfigs(any())).thenReturn(configsResult);
-        when(adminClient.listOffsets(anyMap())).thenReturn(listOffsetsResult);
+        when(adminClient.listOffsets(Map.of(topicPartition, OffsetSpec.earliest()))).thenReturn(earliestResult);
+        when(adminClient.listOffsets(Map.of(topicPartition, OffsetSpec.latest()))).thenReturn(latestResult);
         when(clusterManager.getAdminClient("local")).thenReturn(adminClient);
 
         // When
@@ -125,10 +148,16 @@ class KafkaMonitorServiceTest {
             .expectNextMatches(topicInfo -> 
                 topicInfo.getName().equals(topicName) &&
                 topicInfo.getPartitions().size() == 1 &&
-                topicInfo.getPartitions().get(0).getPartition() == 0)
+                topicInfo.getPartitions().get(0).getPartition() == 0 &&
+                topicInfo.getPartitions().get(0).getBeginningOffset() == 0 &&
+                topicInfo.getPartitions().get(0).getEndOffset() == 100)
             .verifyComplete();
     }
 
+    /**
+     * Test that updateConsumerGroupOffset() successfully updates consumer group offset.
+     * Verifies that offset update is performed through AdminClient after validation.
+     */
     @Test
     void updateConsumerGroupOffset_ShouldUpdateOffset() {
         // Given
@@ -174,6 +203,10 @@ class KafkaMonitorServiceTest {
             .verifyComplete();
     }
 
+    /**
+     * Test that updateConsumerGroupOffset() returns error for invalid offset value.
+     * Verifies that offset validation fails for negative offset and returns appropriate error.
+     */
     @Test
     void updateConsumerGroupOffset_WithInvalidOffset_ShouldReturnError() {
         // Given
