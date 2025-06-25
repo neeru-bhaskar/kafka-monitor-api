@@ -88,8 +88,10 @@ public class KafkaMessageService {
                     " for topic '" + topic + "' partition " + partition + 
                     ". Valid range: " + beginningOffset + "-" + (endOffset - 1));
             }
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to validate offset", e);
+            throw new IllegalArgumentException("Failed to validate offset: " + e.getMessage(), e);
         }
     }
 
