@@ -105,4 +105,5 @@ public class KafkaMonitorController {
             .onErrorMap(e -> e instanceof ExecutionException && e.getCause() instanceof UnknownMemberIdException,
                        e -> new IllegalStateException("Consumer group '" + groupId + "' does not exist"));
     }
+
 }
