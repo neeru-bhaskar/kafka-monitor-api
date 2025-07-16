@@ -3,6 +3,7 @@ package com.kafka.monitor.service;
 import com.kafka.monitor.config.KafkaClusterManager;
 import com.kafka.monitor.model.MessageResponse;
 import com.kafka.monitor.model.MessageSearchRequest;
+import com.kafka.monitor.model.MessageTextSearchRequest;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -204,6 +205,77 @@ public class KafkaMessageService {
                             if (messageCount >= 50) break;
                         }
                     }
+                }
+
+                sink.complete();
+            } catch (Exception e) {
+                sink.error(e);
+            }
+        }, FluxSink.OverflowStrategy.BUFFER);
+    }
+
+    /**
+     * Searches for messages in a topic where key or value contains the search text.
+     *
+     * @param clusterName Name of the Kafka cluster
+     * @param searchRequest Search criteria including topic and search text
+     * @return Flux of messages containing the search text (max 50 messages)
+     */
+    public Flux<MessageResponse> searchMessagesByText(String clusterName, MessageTextSearchRequest searchRequest) {
+        return Flux.create(sink -> {
+            try {
+                AdminClient adminClient = clusterManager.getAdminClient(clusterName);
+                // Validate topic exists
+                validateTopicPartition(adminClient, searchRequest.getTopic(), 0);
+
+                KafkaConsumer<String, String> consumer = clusterManager.getConsumer(clusterName);
+                List<TopicPartition> partitions = consumer.partitionsFor(searchRequest.getTopic()).stream()
+                    .map(p -> new TopicPartition(searchRequest.getTopic(), p.partition()))
+                    .collect(Collectors.toList());
+
+                Map<TopicPartition, Long> beginningOffsets = consumer.beginningOffsets(partitions);
+                Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitions);
+
+                int messageCount = 0;
+                String searchText = searchRequest.getSearchText().toLowerCase();
+
+                for (TopicPartition partition : partitions) {
+                    long startOffset = beginningOffsets.get(partition);
+                    long endOffset = endOffsets.get(partition);
+
+                    if (startOffset >= endOffset) continue;
+
+                    consumer.assign(Collections.singleton(partition));
+                    consumer.seek(partition, startOffset);
+
+                    while (messageCount < 50 && consumer.position(partition) < endOffset) {
+                        ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
+                        if (records.isEmpty()) break;
+
+                        for (ConsumerRecord<String, String> record : records) {
+                            if (record.offset() >= endOffset) break;
+
+                            String key = record.key() != null ? record.key().toLowerCase() : "";
+                            String value = record.value() != null ? record.value().toLowerCase() : "";
+
+                            if (key.contains(searchText) || value.contains(searchText)) {
+                                messageCount++;
+                                sink.next(MessageResponse.builder()
+                                    .topic(record.topic())
+                                    .partition(record.partition())
+                                    .offset(record.offset())
+                                    .timestamp(Instant.ofEpochMilli(record.timestamp()))
+                                    .key(record.key())
+                                    .value(record.value())
+                                    .clusterName(clusterName)
+                                    .build());
+
+                                if (messageCount >= 50) break;
+                            }
+                        }
+                    }
+
+                    if (messageCount >= 50) break;
                 }
 
                 sink.complete();

@@ -112,6 +112,18 @@ curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/search \
   }' | jq
 ```
 
+##### Search by Text Content (Key or Value)
+```bash
+curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/text-search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "orders",
+    "searchText": "Order 8"
+  }' | jq
+```
+
+This will return all messages where either the key or value contains the text "Order 8" (case-insensitive). The search is performed across all partitions of the topic, and returns up to 50 matching messages.
+
 ### 5. Error Cases
 
 #### 5.1 Invalid Partition

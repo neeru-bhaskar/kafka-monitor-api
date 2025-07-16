@@ -41,7 +41,7 @@ public class KafkaMonitorService {
      * @return Flux of cluster name and bootstrap server pairs
      */
     public Flux<Map.Entry<String, String>> listClusters() {
-        return Flux.fromIterable(clusterManager.getClusterInfo().entrySet());
+        return Flux.fromIterable(clusterManager.getClusters().entrySet());
     }
 
     /**
