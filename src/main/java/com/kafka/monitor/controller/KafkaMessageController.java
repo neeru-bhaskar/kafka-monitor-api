@@ -1,5 +1,6 @@
 package com.kafka.monitor.controller;
 
+import com.kafka.monitor.model.MessagePublishRequest;
 import com.kafka.monitor.model.MessageResponse;
 import com.kafka.monitor.model.MessageSearchRequest;
 import com.kafka.monitor.service.KafkaMessageService;
@@ -63,5 +64,26 @@ public class KafkaMessageController {
             @PathVariable String clusterName,
             @Valid @RequestBody MessageSearchRequest request) {
         return kafkaMessageService.searchMessages(clusterName, request);
+    }
+
+    /**
+     * Publishes a message to a specific topic and partition.
+     * If partition is not specified, Kafka will choose one based on the key.
+     *
+     * @param clusterName Name of the Kafka cluster
+     * @param request Message publish request containing topic, key, value, and optional partition
+     * @return Offset where the message was written
+     */
+    @PostMapping(value = "/clusters/{clusterName}/messages",
+                produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<Long> publishMessage(
+            @PathVariable String clusterName,
+            @Valid @RequestBody MessagePublishRequest request) {
+        return kafkaMessageService.publishMessage(
+            clusterName,
+            request.getTopic(),
+            request.getKey(),
+            request.getValue(),
+            request.getPartition());
     }
 }

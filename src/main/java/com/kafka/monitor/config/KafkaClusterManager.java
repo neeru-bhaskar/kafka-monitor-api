@@ -7,7 +7,9 @@ import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -29,6 +31,9 @@ public class KafkaClusterManager {
     
     @Getter
     private final Map<String, KafkaConsumer<String, String>> consumers = new HashMap<>();
+
+    @Getter
+    private final Map<String, KafkaProducer<String, String>> producers = new HashMap<>();
 
     /**
      * Initializes AdminClient and KafkaConsumer instances for each configured cluster.
@@ -56,6 +61,16 @@ public class KafkaClusterManager {
                 consumerConfig.putAll(cluster.getProperties());
             }
             consumers.put(cluster.getName(), new KafkaConsumer<>(consumerConfig));
+
+            // Create KafkaProducer
+            Properties producerConfig = new Properties();
+            producerConfig.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.getBootstrapServers());
+            producerConfig.put("key.serializer", StringSerializer.class.getName());
+            producerConfig.put("value.serializer", StringSerializer.class.getName());
+            if (cluster.getProperties() != null) {
+                producerConfig.putAll(cluster.getProperties());
+            }
+            producers.put(cluster.getName(), new KafkaProducer<>(producerConfig));
         });
     }
 
@@ -67,6 +82,7 @@ public class KafkaClusterManager {
     public void cleanup() {
         adminClients.values().forEach(AdminClient::close);
         consumers.values().forEach(KafkaConsumer::close);
+        producers.values().forEach(KafkaProducer::close);
     }
 
     /**
@@ -97,6 +113,26 @@ public class KafkaClusterManager {
             throw new IllegalArgumentException("Unknown Kafka cluster: " + clusterName);
         }
         return consumer;
+    }
+
+    /**
+     * Gets a map of all configured clusters and their bootstrap servers.
+     * 
+     * @return Map where key is cluster name and value is bootstrap servers string
+     */
+    /**
+     * Gets the KafkaProducer instance for a specific cluster.
+     * 
+     * @param clusterName Name of the cluster to get the KafkaProducer for
+     * @return KafkaProducer instance for the specified cluster
+     * @throws IllegalArgumentException if cluster name is not found
+     */
+    public KafkaProducer<String, String> getProducer(String clusterName) {
+        KafkaProducer<String, String> producer = producers.get(clusterName);
+        if (producer == null) {
+            throw new IllegalArgumentException("Unknown Kafka cluster: " + clusterName);
+        }
+        return producer;
     }
 
     /**

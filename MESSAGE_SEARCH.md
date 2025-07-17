@@ -139,3 +139,36 @@ Response will include messages that match ALL specified criteria:
 4. If a partition is not specified, the search will be performed across all partitions
 5. Messages are returned in order of offset within each partition
 6. If parsing a message value as JSON fails, that message is skipped and not included in results
+
+## Publishing Messages
+
+You can publish new messages to a topic using the publish endpoint.
+
+Request:
+```bash
+curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "orders",
+    "key": "ORD-100",
+    "value": "{\"orderId\":\"ORD-100\",\"amount\":1000,\"currency\":\"USD\",\"status\":\"PENDING\",\"customerName\":\"Customer 100\",\"items\":[{\"productId\":\"PROD-100\",\"quantity\":1,\"price\":1000}]}",
+    "partition": 0
+  }' | jq
+```
+
+Parameters:
+- `topic` (required): Name of the topic to publish to
+- `key` (required): Message key
+- `value` (required): Message value (must be valid JSON string)
+- `partition` (optional): Specific partition to publish to. If not specified, Kafka will choose based on the key
+
+Response:
+The endpoint returns the offset where the message was written:
+```json
+42
+```
+
+Notes:
+1. The message value must be a valid JSON string
+2. If a partition is specified, it must be valid for the topic
+3. If no partition is specified, Kafka will choose one based on the key's hash

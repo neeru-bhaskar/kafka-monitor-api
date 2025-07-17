@@ -10,6 +10,9 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.springframework.stereotype.Service;
@@ -249,5 +252,42 @@ public class KafkaMessageService {
                 sink.error(e);
             }
         }, FluxSink.OverflowStrategy.BUFFER);
+    }
+
+    /**
+     * Publishes a message to a specific topic and partition.
+     * If partition is not specified, Kafka will choose one based on the key.
+     *
+     * @param clusterName Name of the Kafka cluster
+     * @param topic Topic name
+     * @param key Message key
+     * @param value Message value
+     * @param partition Optional partition number
+     * @return Mono containing the offset where the message was written
+     */
+    public Mono<Long> publishMessage(String clusterName, String topic, String key, String value, Integer partition) {
+        return Mono.fromCallable(() -> {
+            AdminClient adminClient = clusterManager.getAdminClient(clusterName);
+            // Validate topic and partition if specified
+            if (partition != null) {
+                validateTopicPartition(adminClient, topic, partition);
+            }
+
+            KafkaProducer<String, String> producer = clusterManager.getProducer(clusterName);
+            ProducerRecord<String, String> record;
+
+            if (partition != null) {
+                record = new ProducerRecord<>(topic, partition, key, value);
+            } else {
+                record = new ProducerRecord<>(topic, key, value);
+            }
+
+            try {
+                RecordMetadata metadata = producer.send(record).get();
+                return metadata.offset();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to publish message: " + e.getMessage(), e);
+            }
+        });
     }
 }
