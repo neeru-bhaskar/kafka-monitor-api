@@ -1,5 +1,6 @@
 package com.kafka.monitor.model;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Data;
 import java.time.Instant;
@@ -24,11 +25,12 @@ public class MessageResponse {
     private long offset;
     
     /** Timestamp when the message was written to Kafka */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
     private Instant timestamp;
     
     /** Message key (may be null) */
     private String key;
     
     /** Message value/content */
-    private String value;
+    private Object value;
 }

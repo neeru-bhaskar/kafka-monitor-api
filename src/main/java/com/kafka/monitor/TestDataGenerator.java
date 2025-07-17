@@ -72,7 +72,8 @@ public class TestDataGenerator {
 
         for (int i = 0; i < 25; i++) {
             String key = "ORD-" + i;
-            String value = "Order " + i + " for $" + (i * 10);
+            String value = String.format("{\"orderId\":\"%s\",\"amount\":%d,\"currency\":\"USD\",\"status\":\"PENDING\",\"customerName\":\"Customer %d\",\"items\":[{\"productId\":\"PROD-%d\",\"quantity\":%d,\"price\":%d}]}", 
+                key, i * 10, i, i, 1, i * 10);
             
             ProducerRecord<String, String> record = new ProducerRecord<>(
                 ORDERS_TOPIC,
@@ -97,9 +98,23 @@ public class TestDataGenerator {
         List<Future<RecordMetadata>> futures = new ArrayList<>();
         Instant now = Instant.now();
 
+        String[] notificationTypes = {"ORDER_CREATED", "ORDER_SHIPPED", "ORDER_DELIVERED", "PAYMENT_RECEIVED", "ORDER_CANCELLED"};
+        String[] notificationPriorities = {"HIGH", "MEDIUM", "LOW"};
+
         for (int i = 0; i < 15; i++) {
             String key = "NOTIF-" + i;
-            String value = "Notification " + i + ": Order " + (i % 5) + " status updated";
+            String orderId = "ORD-" + (i % 5);
+            String notificationType = notificationTypes[i % notificationTypes.length];
+            String priority = notificationPriorities[i % notificationPriorities.length];
+
+            String value = String.format("{\"notificationId\":\"%s\",\"type\":\"%s\",\"priority\":\"%s\",\"orderId\":\"%s\",\"message\":\"Order %s has been %s\",\"timestamp\":\"%s\"}",
+                key,
+                notificationType,
+                priority,
+                orderId,
+                orderId,
+                notificationType.toLowerCase().replace('_', ' '),
+                now.plusSeconds(i).toString());
             
             ProducerRecord<String, String> record = new ProducerRecord<>(
                 NOTIFICATIONS_TOPIC,

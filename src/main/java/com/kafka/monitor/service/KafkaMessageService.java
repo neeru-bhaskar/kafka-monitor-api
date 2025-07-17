@@ -1,5 +1,6 @@
 package com.kafka.monitor.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kafka.monitor.config.KafkaClusterManager;
 import com.kafka.monitor.model.MessageResponse;
 import com.kafka.monitor.model.MessageSearchRequest;
@@ -28,9 +29,11 @@ import java.util.stream.Collectors;
 @Service
 public class KafkaMessageService {
     private final KafkaClusterManager clusterManager;
+    private final ObjectMapper objectMapper;
 
-    public KafkaMessageService(KafkaClusterManager clusterManager) {
+    public KafkaMessageService(KafkaClusterManager clusterManager, ObjectMapper objectMapper) {
         this.clusterManager = clusterManager;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -123,15 +126,21 @@ public class KafkaMessageService {
             }
 
             ConsumerRecord<String, String> record = records.records(topicPartition).iterator().next();
-            return MessageResponse.builder()
-                    .topic(record.topic())
-                    .partition(record.partition())
-                    .offset(record.offset())
-                    .timestamp(Instant.ofEpochMilli(record.timestamp()))
-                    .key(record.key())
-                    .value(record.value())
-                    .clusterName(clusterName)
-                    .build();
+            try {
+                Object jsonValue = objectMapper.readValue(record.value(), Object.class);
+                return MessageResponse.builder()
+                        .topic(record.topic())
+                        .partition(record.partition())
+                        .offset(record.offset())
+                        .timestamp(Instant.ofEpochMilli(record.timestamp()))
+                        .key(record.key())
+                        .value(jsonValue)
+                        .clusterName(clusterName)
+                        .build();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to parse message value as JSON", e);
+            }
+
         });
     }
 
@@ -192,15 +201,20 @@ public class KafkaMessageService {
                                 messageTimestamp.isBefore(searchRequest.getStartTimestamp())) continue;
 
                             messageCount++;
-                            sink.next(MessageResponse.builder()
-                                .topic(record.topic())
-                                .partition(record.partition())
-                                .offset(record.offset())
-                                .timestamp(Instant.ofEpochMilli(record.timestamp()))
-                                .key(record.key())
-                                .value(record.value())
-                                .clusterName(clusterName)
-                                .build());
+                            try {
+                                Object jsonValue = objectMapper.readValue(record.value(), Object.class);
+                                sink.next(MessageResponse.builder()
+                                        .topic(record.topic())
+                                        .partition(record.partition())
+                                        .offset(record.offset())
+                                        .timestamp(Instant.ofEpochMilli(record.timestamp()))
+                                        .key(record.key())
+                                        .value(jsonValue)
+                                        .clusterName(clusterName)
+                                        .build());
+                            } catch (Exception e) {
+                                //Ignore if parsing fails, just move to the next message
+                            }
 
                             if (messageCount >= 50) break;
                         }
@@ -260,15 +274,21 @@ public class KafkaMessageService {
 
                             if (key.contains(searchText) || value.contains(searchText)) {
                                 messageCount++;
-                                sink.next(MessageResponse.builder()
-                                    .topic(record.topic())
-                                    .partition(record.partition())
-                                    .offset(record.offset())
-                                    .timestamp(Instant.ofEpochMilli(record.timestamp()))
-                                    .key(record.key())
-                                    .value(record.value())
-                                    .clusterName(clusterName)
-                                    .build());
+
+                                try {
+                                    Object jsonValue = objectMapper.readValue(value, Object.class);
+                                    sink.next(MessageResponse.builder()
+                                            .topic(record.topic())
+                                            .partition(record.partition())
+                                            .offset(record.offset())
+                                            .timestamp(Instant.ofEpochMilli(record.timestamp()))
+                                            .key(record.key())
+                                            .value(jsonValue)
+                                            .clusterName(clusterName)
+                                            .build());
+                                } catch (Exception e) {
+                                    //Ignore if parsing fails, just move to the next message
+                                }
 
                                 if (messageCount >= 50) break;
                             }
