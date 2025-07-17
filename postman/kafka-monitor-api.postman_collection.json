@@ -71,7 +71,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"topic\": \"orders\",\n    \"key\": \"ORD-100\",\n    \"value\": \"{\\\"orderId\\\":\\\"ORD-100\\\",\\\"amount\\\":1000,\\\"currency\\\":\\\"USD\\\",\\\"status\\\":\\\"PENDING\\\",\\\"customerName\\\":\\\"Customer 100\\\",\\\"items\\\":[{\\\"productId\\\":\\\"PROD-100\\\",\\\"quantity\\\":1,\\\"price\\\":1000}]}\",\n    \"partition\": 0\n}"
+              "raw": "{\n    \"topic\": \"orders\",\n    \"key\": \"ORD-100\",\n    \"value\": {\n        \"orderId\": \"ORD-100\",\n        \"amount\": 1000,\n        \"currency\": \"USD\",\n        \"status\": \"PENDING\",\n        \"customerName\": \"Customer 100\",\n        \"items\": [{\n            \"productId\": \"PROD-100\",\n            \"quantity\": 1,\n            \"price\": 1000\n        }]\n    },\n    \"partition\": 0\n}"
             },
             "url": {
               "raw": "http://localhost:8080/api/kafka/clusters/local/messages",

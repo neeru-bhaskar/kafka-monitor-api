@@ -13,6 +13,8 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.springframework.stereotype.Service;
@@ -265,23 +267,36 @@ public class KafkaMessageService {
      * @param partition Optional partition number
      * @return Mono containing the offset where the message was written
      */
-    public Mono<Long> publishMessage(String clusterName, String topic, String key, String value, Integer partition) {
+    public Mono<Long> publishMessage(String clusterName, String topic, String key, JsonNode value, Integer partition) {
         return Mono.fromCallable(() -> {
+            // Get producer and admin client
+            KafkaProducer<String, String> producer = clusterManager.getProducer(clusterName);
             AdminClient adminClient = clusterManager.getAdminClient(clusterName);
+
             // Validate topic and partition if specified
             if (partition != null) {
                 validateTopicPartition(adminClient, topic, partition);
-            }
-
-            KafkaProducer<String, String> producer = clusterManager.getProducer(clusterName);
-            ProducerRecord<String, String> record;
-
-            if (partition != null) {
-                record = new ProducerRecord<>(topic, partition, key, value);
             } else {
-                record = new ProducerRecord<>(topic, key, value);
+                validateTopicPartition(adminClient, topic, 0);
             }
 
+            // Convert value to JSON string
+            String jsonValue;
+            try {
+                jsonValue = objectMapper.writeValueAsString(value);
+            } catch (Exception e) {
+                throw new IllegalArgumentException("Invalid JSON value: " + e.getMessage());
+            }
+
+            // Create producer record
+            ProducerRecord<String, String> record;
+            if (partition != null) {
+                record = new ProducerRecord<>(topic, partition, key, jsonValue);
+            } else {
+                record = new ProducerRecord<>(topic, key, jsonValue);
+            }
+
+            // Send record and get offset
             try {
                 RecordMetadata metadata = producer.send(record).get();
                 return metadata.offset();

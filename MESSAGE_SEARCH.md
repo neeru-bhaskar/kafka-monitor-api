@@ -151,7 +151,18 @@ curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages \
   -d '{
     "topic": "orders",
     "key": "ORD-100",
-    "value": "{\"orderId\":\"ORD-100\",\"amount\":1000,\"currency\":\"USD\",\"status\":\"PENDING\",\"customerName\":\"Customer 100\",\"items\":[{\"productId\":\"PROD-100\",\"quantity\":1,\"price\":1000}]}",
+    "value": {
+      "orderId": "ORD-100",
+      "amount": 1000,
+      "currency": "USD",
+      "status": "PENDING",
+      "customerName": "Customer 100",
+      "items": [{
+        "productId": "PROD-100",
+        "quantity": 1,
+        "price": 1000
+      }]
+    },
     "partition": 0
   }' | jq
 ```
@@ -159,7 +170,7 @@ curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages \
 Parameters:
 - `topic` (required): Name of the topic to publish to
 - `key` (required): Message key
-- `value` (required): Message value (must be valid JSON string)
+- `value` (required): Message value as a JSON object
 - `partition` (optional): Specific partition to publish to. If not specified, Kafka will choose based on the key
 
 Response:
@@ -169,6 +180,6 @@ The endpoint returns the offset where the message was written:
 ```
 
 Notes:
-1. The message value must be a valid JSON string
+1. The message value must be a valid JSON object
 2. If a partition is specified, it must be valid for the topic
 3. If no partition is specified, Kafka will choose one based on the key's hash

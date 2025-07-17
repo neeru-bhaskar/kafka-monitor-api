@@ -3,6 +3,7 @@ package com.kafka.monitor.controller;
 import com.kafka.monitor.model.MessagePublishRequest;
 import com.kafka.monitor.model.MessageResponse;
 import com.kafka.monitor.model.MessageSearchRequest;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.kafka.monitor.service.KafkaMessageService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
