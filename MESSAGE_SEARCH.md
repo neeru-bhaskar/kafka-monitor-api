@@ -169,7 +169,7 @@ curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages \
 
 Parameters:
 - `topic` (required): Name of the topic to publish to
-- `key` (required): Message key
+- `key` (optional): Message key. If not provided, the message will be published without a key
 - `value` (required): Message value as a JSON object
 - `partition` (optional): Specific partition to publish to. If not specified, Kafka will choose based on the key
 

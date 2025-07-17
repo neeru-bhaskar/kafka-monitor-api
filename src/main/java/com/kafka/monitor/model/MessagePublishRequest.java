@@ -10,7 +10,6 @@ public class MessagePublishRequest {
     @NotBlank(message = "Topic name is required")
     private String topic;
 
-    @NotNull(message = "Message key is required")
     private String key;
 
     @NotNull(message = "Message value is required")

@@ -79,7 +79,7 @@ public class KafkaMessageController {
                 produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Long> publishMessage(
             @PathVariable String clusterName,
-            @Valid @RequestBody MessagePublishRequest request) {
+            @RequestBody MessagePublishRequest request) {
         return kafkaMessageService.publishMessage(
             clusterName,
             request.getTopic(),

@@ -293,7 +293,7 @@ public class KafkaMessageService {
             if (partition != null) {
                 record = new ProducerRecord<>(topic, partition, key, jsonValue);
             } else {
-                record = new ProducerRecord<>(topic, key, jsonValue);
+                record = new ProducerRecord<>(topic, null, key, jsonValue);
             }
 
             // Send record and get offset
