@@ -4,21 +4,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kafka.monitor.config.KafkaClusterManager;
 import com.kafka.monitor.model.MessageResponse;
 import com.kafka.monitor.model.MessageSearchRequest;
-import com.kafka.monitor.model.MessageTextSearchRequest;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.clients.consumer.*;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.FluxSink;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -146,6 +149,12 @@ public class KafkaMessageService {
 
     /**
      * Searches for messages in a topic based on various criteria.
+     * Supports searching by:
+     * - partition
+     * - offset range (startOffset, endOffset)
+     * - timestamp range (startTimestamp, endTimestamp)
+     * - text content in key or value
+     * At least one search parameter must be provided.
      *
      * @param clusterName Name of the Kafka cluster
      * @param searchRequest Search criteria
@@ -155,7 +164,7 @@ public class KafkaMessageService {
         return Flux.create(sink -> {
             try {
                 AdminClient adminClient = clusterManager.getAdminClient(clusterName);
-                // Validate topic and partition
+                // Validate topic and partition if specified
                 validateTopicPartition(adminClient, searchRequest.getTopic(), 
                         searchRequest.getPartition() != null ? searchRequest.getPartition() : 0);
 
@@ -174,9 +183,13 @@ public class KafkaMessageService {
                 Map<TopicPartition, Long> beginningOffsets = consumer.beginningOffsets(partitions);
                 Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitions);
 
+                String searchText = searchRequest.getSearchText() != null ? 
+                    searchRequest.getSearchText().toLowerCase() : null;
+
+                int messageCount = 0;
                 for (TopicPartition partition : partitions) {
                     long startOffset = searchRequest.getStartOffset() != null ?
-                        searchRequest.getStartOffset() :
+                        Math.max(searchRequest.getStartOffset(), beginningOffsets.get(partition)) : //TODO: is this correct?
                         beginningOffsets.get(partition);
                     long endOffset = searchRequest.getEndOffset() != null ?
                         Math.min(searchRequest.getEndOffset(), endOffsets.get(partition)) :
@@ -187,18 +200,26 @@ public class KafkaMessageService {
                     consumer.assign(Collections.singleton(partition));
                     consumer.seek(partition, startOffset);
 
-                    int messageCount = 0;
-                    while (messageCount < 50) {
+                    while (messageCount < 50 && consumer.position(partition) < endOffset) { //TODO: does end offset need to be inclusive or exclusive?
                         ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                         if (records.isEmpty()) break;
 
                         for (ConsumerRecord<String, String> record : records) {
-                            if (record.offset() > endOffset) continue;
+                            if (record.offset() >= endOffset) break;
+
+                            // Check timestamp range if specified
                             Instant messageTimestamp = Instant.ofEpochMilli(record.timestamp());
                             if (searchRequest.getEndTimestamp() != null && 
                                 messageTimestamp.isAfter(searchRequest.getEndTimestamp())) continue;
                             if (searchRequest.getStartTimestamp() != null && 
                                 messageTimestamp.isBefore(searchRequest.getStartTimestamp())) continue;
+
+                            // Check text content if search text is specified
+                            if (searchText != null) {
+                                String key = record.key() != null ? record.key().toLowerCase() : "";
+                                String value = record.value() != null ? record.value().toLowerCase() : "";
+                                if (!key.contains(searchText) && !value.contains(searchText)) continue;
+                            }
 
                             messageCount++;
                             try {
@@ -207,7 +228,7 @@ public class KafkaMessageService {
                                         .topic(record.topic())
                                         .partition(record.partition())
                                         .offset(record.offset())
-                                        .timestamp(Instant.ofEpochMilli(record.timestamp()))
+                                        .timestamp(messageTimestamp)
                                         .key(record.key())
                                         .value(jsonValue)
                                         .clusterName(clusterName)
@@ -217,81 +238,6 @@ public class KafkaMessageService {
                             }
 
                             if (messageCount >= 50) break;
-                        }
-                    }
-                }
-
-                sink.complete();
-            } catch (Exception e) {
-                sink.error(e);
-            }
-        }, FluxSink.OverflowStrategy.BUFFER);
-    }
-
-    /**
-     * Searches for messages in a topic where key or value contains the search text.
-     *
-     * @param clusterName Name of the Kafka cluster
-     * @param searchRequest Search criteria including topic and search text
-     * @return Flux of messages containing the search text (max 50 messages)
-     */
-    public Flux<MessageResponse> searchMessagesByText(String clusterName, MessageTextSearchRequest searchRequest) {
-        return Flux.create(sink -> {
-            try {
-                AdminClient adminClient = clusterManager.getAdminClient(clusterName);
-                // Validate topic exists
-                validateTopicPartition(adminClient, searchRequest.getTopic(), 0);
-
-                KafkaConsumer<String, String> consumer = clusterManager.getConsumer(clusterName);
-                List<TopicPartition> partitions = consumer.partitionsFor(searchRequest.getTopic()).stream()
-                    .map(p -> new TopicPartition(searchRequest.getTopic(), p.partition()))
-                    .collect(Collectors.toList());
-
-                Map<TopicPartition, Long> beginningOffsets = consumer.beginningOffsets(partitions);
-                Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitions);
-
-                int messageCount = 0;
-                String searchText = searchRequest.getSearchText().toLowerCase();
-
-                for (TopicPartition partition : partitions) {
-                    long startOffset = beginningOffsets.get(partition);
-                    long endOffset = endOffsets.get(partition);
-
-                    if (startOffset >= endOffset) continue;
-
-                    consumer.assign(Collections.singleton(partition));
-                    consumer.seek(partition, startOffset);
-
-                    while (messageCount < 50 && consumer.position(partition) < endOffset) {
-                        ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
-                        if (records.isEmpty()) break;
-
-                        for (ConsumerRecord<String, String> record : records) {
-                            if (record.offset() >= endOffset) break;
-
-                            String key = record.key() != null ? record.key().toLowerCase() : "";
-                            String value = record.value() != null ? record.value().toLowerCase() : "";
-
-                            if (key.contains(searchText) || value.contains(searchText)) {
-                                messageCount++;
-
-                                try {
-                                    Object jsonValue = objectMapper.readValue(value, Object.class);
-                                    sink.next(MessageResponse.builder()
-                                            .topic(record.topic())
-                                            .partition(record.partition())
-                                            .offset(record.offset())
-                                            .timestamp(Instant.ofEpochMilli(record.timestamp()))
-                                            .key(record.key())
-                                            .value(jsonValue)
-                                            .clusterName(clusterName)
-                                            .build());
-                                } catch (Exception e) {
-                                    //Ignore if parsing fails, just move to the next message
-                                }
-
-                                if (messageCount >= 50) break;
-                            }
                         }
                     }
 

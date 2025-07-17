@@ -78,6 +78,14 @@ Expected response:
 
 #### 4.2 Search Messages
 
+The search endpoint supports multiple search criteria. At least one of the following search parameters must be provided:
+- partition
+- startOffset
+- endOffset
+- startTimestamp
+- endTimestamp
+- searchText
+
 ##### Search by Offset Range
 ```bash
 curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/search \
@@ -90,14 +98,73 @@ curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/search \
   }' | jq
 ```
 
-##### Search Across All Partitions
+##### Search by Time Range
 ```bash
 curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/search \
   -H "Content-Type: application/json" \
   -d '{
     "topic": "orders",
+    "startTimestamp": "2025-07-16T22:00:00Z",
+    "endTimestamp": "2025-07-16T23:00:00Z"
+  }' | jq
+```
+
+##### Search by Text Content
+```bash
+curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "orders",
+    "searchText": "Customer 1"
+  }' | jq
+```
+
+##### Combined Search
+```bash
+curl -s -X POST http://localhost:8080/api/kafka/clusters/local/messages/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "orders",
+    "partition": 0,
     "startOffset": 0,
-    "endOffset": 5
+    "endOffset": 100,
+    "searchText": "PENDING"
+  }' | jq
+```
+
+Expected response format:
+```json
+[
+  {
+    "clusterName": "local",
+    "topic": "orders",
+    "partition": 0,
+    "offset": 0,
+    "timestamp": "2025-07-16T22:00:00Z",
+    "key": "ORD-0",
+    "value": {
+      "orderId": "ORD-0",
+      "amount": 0,
+      "currency": "USD",
+      "status": "PENDING",
+      "customerName": "Customer 0",
+      "items": [
+        {
+          "productId": "PROD-0",
+          "quantity": 1,
+          "price": 0
+        }
+      ]
+    }
+  }
+]
+```
+
+Notes:
+- The search endpoint returns up to 50 messages that match the search criteria
+- If no search parameters are provided, a 400 Bad Request error will be returned
+- Text search is case-insensitive and matches against both message keys and values
+- All timestamps should be in ISO-8601 format with timezone
   }' | jq
 ```
 

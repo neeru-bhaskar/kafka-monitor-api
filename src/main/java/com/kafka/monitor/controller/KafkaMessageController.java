@@ -2,7 +2,6 @@ package com.kafka.monitor.controller;
 
 import com.kafka.monitor.model.MessageResponse;
 import com.kafka.monitor.model.MessageSearchRequest;
-import com.kafka.monitor.model.MessageTextSearchRequest;
 import com.kafka.monitor.service.KafkaMessageService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -46,9 +45,16 @@ public class KafkaMessageController {
     /**
      * Searches for messages in a topic based on various criteria.
      * Returns up to 50 messages matching the criteria.
+     * At least one search parameter must be provided:
+     * - partition
+     * - startOffset
+     * - endOffset
+     * - startTimestamp
+     * - endTimestamp
+     * - searchText
      *
      * @param clusterName Name of the Kafka cluster
-     * @param request Search criteria including topic, optional partition, timestamp range, and offset range
+     * @param request Search criteria including topic and at least one search parameter
      * @return Stream of messages matching the criteria
      */
     @PostMapping(value = "/clusters/{clusterName}/messages/search",
@@ -57,21 +63,5 @@ public class KafkaMessageController {
             @PathVariable String clusterName,
             @Valid @RequestBody MessageSearchRequest request) {
         return kafkaMessageService.searchMessages(clusterName, request);
-    }
-
-    /**
-     * Searches for messages in a topic where key or value contains the search text.
-     * Returns up to 50 messages matching the criteria.
-     *
-     * @param clusterName Name of the Kafka cluster
-     * @param request Search criteria including topic and search text
-     * @return Stream of messages containing the search text
-     */
-    @PostMapping(value = "/clusters/{clusterName}/messages/text-search",
-                produces = MediaType.APPLICATION_JSON_VALUE)
-    public Flux<MessageResponse> searchMessagesByText(
-            @PathVariable String clusterName,
-            @Valid @RequestBody MessageTextSearchRequest request) {
-        return kafkaMessageService.searchMessagesByText(clusterName, request);
     }
 }

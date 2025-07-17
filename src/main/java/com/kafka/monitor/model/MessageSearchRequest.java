@@ -1,16 +1,20 @@
 package com.kafka.monitor.model;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 import java.time.Instant;
 
 /**
  * Request model for searching Kafka messages.
- * Supports searching by topic, partition, timestamp range, and offset range.
- * At least one of the following combinations must be provided:
- * - startOffset and endOffset
- * - startTimestamp and endTimestamp
- * If partition is not specified, search will be performed across all partitions.
+ * Supports searching by topic, partition, timestamp range, offset range, and text content.
+ * At least one of the following search parameters must be provided:
+ * - partition
+ * - startOffset
+ * - endOffset
+ * - startTimestamp
+ * - endTimestamp
+ * - searchText
  */
 @Data
 public class MessageSearchRequest {
@@ -32,4 +36,21 @@ public class MessageSearchRequest {
 
     /** End timestamp (exclusive) for time-based search */
     private Instant endTimestamp;
+
+    /** Optional text to search for in message keys and values (case-insensitive) */
+    private String searchText;
+
+    /**
+     * Validates that at least one search parameter is provided.
+     * @return true if at least one search parameter is provided, false otherwise
+     */
+    @AssertTrue(message = "At least one search parameter (partition, startOffset, endOffset, startTimestamp, endTimestamp, or searchText) must be provided")
+    public boolean isAtLeastOneSearchParameterProvided() {
+        return partition != null ||
+               startOffset != null ||
+               endOffset != null ||
+               startTimestamp != null ||
+               endTimestamp != null ||
+               (searchText != null && !searchText.trim().isEmpty());
+    }
 }

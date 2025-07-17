@@ -1,0 +1,199 @@
+{
+  "info": {
+    "name": "Kafka Monitor API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Clusters",
+      "item": [
+        {
+          "name": "List Clusters",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Topics",
+      "item": [
+        {
+          "name": "List Topics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/topics",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "topics"]
+            }
+          }
+        },
+        {
+          "name": "Get Topic Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/topics/orders",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "topics", "orders"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "Get Message by Offset",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/topics/orders/partitions/0/offsets/0",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "topics", "orders", "partitions", "0", "offsets", "0"]
+            }
+          }
+        },
+        {
+          "name": "Search Messages - By Offset Range",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"topic\": \"orders\",\n    \"partition\": 0,\n    \"startOffset\": 0,\n    \"endOffset\": 5\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/messages/search",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "messages", "search"]
+            }
+          }
+        },
+        {
+          "name": "Search Messages - By Time Range",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"topic\": \"orders\",\n    \"startTimestamp\": \"2025-07-16T22:00:00Z\",\n    \"endTimestamp\": \"2025-07-16T23:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/messages/search",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "messages", "search"]
+            }
+          }
+        },
+        {
+          "name": "Search Messages - By Text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"topic\": \"orders\",\n    \"searchText\": \"Customer 1\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/messages/search",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "messages", "search"]
+            }
+          }
+        },
+        {
+          "name": "Search Messages - Combined Criteria",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"topic\": \"orders\",\n    \"partition\": 1,\n    \"startOffset\": 18,\n    \"endOffset\": 25,\n    \"searchText\": \"Customer 1\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/messages/search",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "messages", "search"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consumer Groups",
+      "item": [
+        {
+          "name": "Update Consumer Group Offset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"topic\": \"orders\",\n    \"partition\": 0,\n    \"offset\": 10\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/kafka/clusters/local/consumer-groups/test-group/offsets",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "kafka", "clusters", "local", "consumer-groups", "test-group", "offsets"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
